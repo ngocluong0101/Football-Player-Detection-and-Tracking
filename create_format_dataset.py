@@ -6,7 +6,7 @@ import shutil
 
 if __name__ == "__main__":
     root_path = "../dataset/football_train"
-    output_path = "./football_yolo_dataset"
+    output_path = "../football_yolo_dataset"
 
     # for subdir in os.listdir(root_path) :
     #     for file_ in os.listdir(os.path.join(root_path, subdir)) :
@@ -19,13 +19,13 @@ if __name__ == "__main__":
 
     parts = list(set(video_without_extension) & set(anno_without_extension))
 
-    if os.part.isdir(output_path) :
+    if os.path.isdir(output_path) :
         shutil.rmtree(output_path)
     os.makedirs(output_path)
     os.makedirs(os.path.join(output_path, "images"))
     os.makedirs(os.path.join(output_path, "labels"))
 
-    for part in parts :
+    for idx, part in enumerate(parts) :
         video = cv2.VideoCapture("{}.mp4".format(part))
         num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
         with open("{}.json".format(part)) as json_file :
@@ -33,3 +33,11 @@ if __name__ == "__main__":
             if num_frames != len(json_data["images"]) :
                 print("Frame number mismatch in {}".format(part))
                 parts.remove(part)
+            
+            frame_counter = 0
+            while video.isOpened():
+                flag, frame = video.read()
+                if not flag :
+                    break
+                cv2.imwrite(os.path.join(output_path, "images", "{}_{}.jpg".format(idx, frame_counter)), frame)
+                frame_counter += 1
