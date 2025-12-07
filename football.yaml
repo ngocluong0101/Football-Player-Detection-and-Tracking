@@ -1,0 +1,17 @@
+# Dataset root directory relative to the yolov5 directory
+path: /home/ngocluong/code/project/football_yolo_dataset
+
+# Train/val/test sets: specify directories, *.txt files, or lists
+train: images/train2017 
+val: images/train2017
+test: # Optional path to test images
+
+# Classes (example using 80 COCO classes)
+names:
+    0: person
+    1: bicycle
+    2: car
+    # ... (remaining COCO classes)
+    77: teddy bear
+    78: hair drier
+    79: toothbrush
