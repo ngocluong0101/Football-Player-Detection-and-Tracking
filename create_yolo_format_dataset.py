@@ -6,8 +6,11 @@ import shutil
 from pprint import pprint
 
 if __name__ == "__main__":
-    root_path = "../dataset/football_train"
+    # root_path = "../dataset/football_train"
+    root_path = "../dataset/football_test"
     output_path = "../football_yolo_dataset"
+    # is_train = True
+    is_train = False
 
     # for subdir in os.listdir(root_path) :
     #     for file_ in os.listdir(os.path.join(root_path, subdir)) :
@@ -20,11 +23,14 @@ if __name__ == "__main__":
 
     parts = list(set(video_without_extension) & set(anno_without_extension))
 
-    if os.path.isdir(output_path) :
-        shutil.rmtree(output_path)
-    os.makedirs(output_path)
-    os.makedirs(os.path.join(output_path, "images"))
-    os.makedirs(os.path.join(output_path, "labels"))
+    mode = "train" if is_train else "val"
+    if not os.path.isdir(output_path) and is_train :
+        os.makedirs(output_path)
+        os.makedirs(os.path.join(output_path, "images", mode))
+        os.makedirs(os.path.join(output_path, "labels", mode))
+    elif not is_train :
+        os.makedirs(os.path.join(output_path, "images", mode))
+        os.makedirs(os.path.join(output_path, "labels", mode)) 
 
     for idx, part in enumerate(parts) :
         video = cv2.VideoCapture("{}.mp4".format(part))
@@ -42,7 +48,7 @@ if __name__ == "__main__":
   
             frame_counter = 0
             while video.isOpened():
-                # print(idx, frame_counter)
+                print(idx, frame_counter)
                 flag, frame = video.read()
                 if not flag :
                     break
@@ -55,9 +61,9 @@ if __name__ == "__main__":
                     # xmin, ymin, w, h = obj["bbox"]
                     # cv2.rectangle(frame, (int(xmin), int(ymin)), (int(xmin+w), int(ymin+h)), (255, 0, 0), 2)
 
-                cv2.imwrite(os.path.join(output_path, "images", "{}_{}.jpg".format(idx, frame_counter)), frame)
+                cv2.imwrite(os.path.join(output_path, "images", mode, "{}_{}.jpg".format(idx, frame_counter)), frame)
 
-                with open(os.path.join(output_path, "labels", "{}_{}.txt".format(idx, frame_counter)), "w") as f :
+                with open(os.path.join(output_path, "labels", mode, "{}_{}.txt".format(idx, frame_counter)), "w") as f :
                     for obj in current_objects :
                         xmin, ymin, w, h = obj["bbox"]
                         x_center = (xmin + w / 2) / width
