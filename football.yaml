@@ -5,7 +5,7 @@ path: /home/ngocluong/code/project/football_yolo_dataset
 train: images/train 
 val: images/val
 
-# Classes (example using 80 COCO classes)
+# Classes
 names:
     0: player
     1: ball
