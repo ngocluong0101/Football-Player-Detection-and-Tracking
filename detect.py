@@ -16,7 +16,8 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 # CONFIG
-VIDEO_PATH = "/home/ngocluong/code/project/dataset/football_train/Match_2031_5_0_test/Match_2031_5_0_test.mp4"
+
+VIDEO_PATH = "/home/ngocluong/code/project/dataset/football_test/Match_1864_1_0_subclip/Match_1864_1_0_subclip.mp4"
 video_name = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
 OUTPUT_PATH = f"outputs/{video_name}_{timestamp}_tracked.mp4"
 WEIGHTS_PATH = "weights/best.pt"
