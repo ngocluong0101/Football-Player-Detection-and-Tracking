@@ -2,7 +2,7 @@ import cv2
 import os
 import glob
 import json
-import shutil
+# import shutil
 from pprint import pprint
 
 if __name__ == "__main__":
