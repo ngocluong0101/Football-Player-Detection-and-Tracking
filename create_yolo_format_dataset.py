@@ -6,6 +6,7 @@ import json
 from pprint import pprint
 
 if __name__ == "__main__":
+    # Cấu hình đường dẫn
     # root_path = "../dataset/football_train"
     root_path = "../dataset/football_test"
     output_path = "../football_yolo_dataset"
@@ -24,23 +25,37 @@ if __name__ == "__main__":
     parts = list(set(video_without_extension) & set(anno_without_extension))
 
     mode = "train" if is_train else "val"
-    if not os.path.isdir(output_path) and is_train :
-        os.makedirs(output_path)
-        os.makedirs(os.path.join(output_path, "images", mode))
-        os.makedirs(os.path.join(output_path, "labels", mode))
-    elif not is_train :
-        os.makedirs(os.path.join(output_path, "images", mode))
-        os.makedirs(os.path.join(output_path, "labels", mode)) 
+
+    # if not os.path.isdir(output_path) and is_train :
+    #     os.makedirs(output_path)
+    #     os.makedirs(os.path.join(output_path, "images", mode))
+    #     os.makedirs(os.path.join(output_path, "labels", mode))
+    # elif not is_train :
+    #     os.makedirs(os.path.join(output_path, "images", mode))
+    #     os.makedirs(os.path.join(output_path, "labels", mode)) 
+
+
+    # Tạo thư mục an toàn với exist_ok=True
+    os.makedirs(os.path.join(output_path, "images", mode), exist_ok=True)
+    os.makedirs(os.path.join(output_path, "labels", mode), exist_ok=True)
 
     for idx, part in enumerate(parts) :
-        video = cv2.VideoCapture("{}.mp4".format(part))
-        num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
-        with open("{}.json".format(part), "r") as json_file :
-            json_data = json.load(json_file)
-            if num_frames != len(json_data["images"]) :
-                print("Frame number mismatch in {}".format(part))
-                parts.remove(part)
+        video_path = "{}.mp4".format(part)
+        json_path = "{}.json".format(part)
 
+        video = cv2.VideoCapture(video_path)
+        num_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        with open(json_path, "r") as json_file :
+            json_data = json.load(json_file)
+
+            if num_frames != len(json_data["images"]):
+                print(f"\n[Warning] Frame mismatch in {part}. Skipped.")
+                video.release()
+                continue
+            
+
+            # cac frame co width, height giong nhau nen lay frame dau tien
             width =json_data["images"][0]["width"]
             height = json_data["images"][0]["height"]
             
@@ -81,4 +96,3 @@ if __name__ == "__main__":
                 frame_counter += 1
                 # exit(0)
 
-            
