@@ -58,16 +58,31 @@ if __name__ == "__main__":
             # cac frame co width, height giong nhau nen lay frame dau tien
             width =json_data["images"][0]["width"]
             height = json_data["images"][0]["height"]
-            
+
+            # filter only player and ball objects
             all_objects = [{"image_id": obj["image_id"], "bbox": obj["bbox"], "category_id": obj["category_id"]} for obj in json_data["annotations"] if obj["category_id"] in [3, 4]]
   
+            # group objects by frame
+            objects_by_frame = {}
+            for obj in all_objects:
+                frame_idx = obj["image_id"] - 1
+                if frame_idx not in objects_by_frame:
+                    objects_by_frame[frame_idx] = []
+                objects_by_frame[frame_idx].append(obj)
+
             frame_counter = 0
             while video.isOpened():
                 print(idx, frame_counter)
                 flag, frame = video.read()
                 if not flag :
                     break
-                current_objects = [obj for obj in all_objects if obj["image_id"] - 1 == frame_counter]
+                
+                # current_objects = [obj for obj in all_objects if obj["image_id"] - 1 == frame_counter]
+
+                # Get objects for the current frame
+                current_objects = objects_by_frame.get(frame_counter, [])
+
+
                 # pprint(current_objects)
                 # for obj in current_objects :
                     # x, y, w, h = obj["bbox"]
@@ -76,23 +91,27 @@ if __name__ == "__main__":
                     # xmin, ymin, w, h = obj["bbox"]
                     # cv2.rectangle(frame, (int(xmin), int(ymin)), (int(xmin+w), int(ymin+h)), (255, 0, 0), 2)
 
+
                 cv2.imwrite(os.path.join(output_path, "images", mode, "{}_{}.jpg".format(idx, frame_counter)), frame)
 
                 with open(os.path.join(output_path, "labels", mode, "{}_{}.txt".format(idx, frame_counter)), "w") as f :
                     for obj in current_objects :
-                        xmin, ymin, w, h = obj["bbox"]
-                        x_center = (xmin + w / 2) / width
-                        y_center = (ymin + h / 2) / height
-                        w /= width
-                        h /= height
-                        if (obj["category_id"] == 4) :
-                            category = 0
-                        else :
-                            category = 1
+                        xmin, ymin, w_box, h_box = obj["bbox"]
+
+                        # Convert bbox to YOLO format
+                        x_center = (xmin + w_box / 2) / width
+                        y_center = (ymin + h_box / 2) / height
+                        w = w_box / width
+                        h = h_box / height
+
+                        # Class 0: player, Class 1: ball
+                        category = 0 if obj["category_id"] == 4 else 1
+
                         # Convert to YOLO format: class_id x_center y_center width height
                         f.write("{} {:6f} {:6f} {:6f} {:6f}\n".format(category, x_center, y_center, w, h))
 
 
                 frame_counter += 1
-                # exit(0)
-
+        video.release()
+    
+    print("Done!")
