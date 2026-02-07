@@ -6,70 +6,84 @@ import numpy as np
 from datetime import datetime
 from deep_sort_realtime.deepsort_tracker import DeepSort
 
+
+try:
+    from team_classifier import TeamClassifier
+except ImportError:
+    print("[ERROR] Không tìm thấy file 'team_classifier.py'. Hãy tạo file này trước!")
+    exit()
+
 if __name__ == "__main__":
-    # 1. SETUP
-    warnings.filterwarnings("ignore", category=FutureWarning)
+    # --- 1. CẤU HÌNH (SETTINGS) ---
+    warnings.filterwarnings("ignore")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-
-    VIDEO_PATH = "/home/ngocluong/code/projects/dataset/football_test/Match_1864_1_0_subclip/Match_1864_1_0_subclip.mp4" 
-    WEIGHTS_PATH = "weights/best.pt"
+    # ĐƯỜNG DẪN VIDEO VÀ MODEL
+    VIDEO_PATH = "/home/ngocluong/code/projects/dataset/football_test/Match_1864_1_0_subclip/Match_1864_1_0_subclip.mp4"
+    WEIGHTS_PATH = "weights/best.pt" 
+    
     OUTPUT_DIR = "outputs"
-    IMG_SIZE = 640
-    CONF_THRES = 0.45  # Tăng lên để giảm nhiễu
+    IMG_SIZE = 640          
+    CONF_THRES = 0.45       
     IOU_THRES = 0.40
 
-    # Kiểm tra GPU
+    # --- 2. KHỞI TẠO (INITIALIZATION) ---
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"[INFO] Using Device: {device.upper()}")
 
-    # 2. INIT TRACKER
-    # max_age: Số frame giữ ID khi bị che khuất. Bóng đá nên để cao (30-50)
+    # Khởi tạo DeepSort Tracker
     tracker = DeepSort(
         max_age=50,
         n_init=3,
         max_iou_distance=0.7,
         nms_max_overlap=1.0, 
         max_cosine_distance=0.2,
-        embedder="mobilenet", # Hoặc 'torchreid' nếu muốn chính xác hơn (nhưng nặng hơn)
+        embedder="mobilenet", 
         embedder_gpu=True if device == 'cuda' else False
     )
 
-    # 3. LOAD MODEL
-    print(f"[INFO] Loading YOLOv5 from {WEIGHTS_PATH}...")
+    # Load Model YOLOv5
+    print(f"[INFO] Loading YOLOv5 model from {WEIGHTS_PATH}...")
+    try:
+        model = torch.hub.load('yolov5', 'custom', path=WEIGHTS_PATH, source='local') 
+    except:
+        print("[WARN] Local YOLOv5 not found, trying GitHub...")
+        model = torch.hub.load('ultralytics/yolov5', 'custom', path=WEIGHTS_PATH)
 
-    model = torch.hub.load('yolov5', 'custom', path=WEIGHTS_PATH, source='local') 
     model.conf = CONF_THRES
     model.iou = IOU_THRES
     model.to(device)
 
-    # 4. VIDEO SETUP
+    # --- 3. CHUẨN BỊ VIDEO ---
     if not os.path.exists(VIDEO_PATH):
         print(f"[ERROR] Video path not found: {VIDEO_PATH}")
         exit()
 
     cap = cv2.VideoCapture(VIDEO_PATH)
-    video_name = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    OUTPUT_PATH = os.path.join(OUTPUT_DIR, f"{video_name}_{timestamp}_tracked.mp4")
-
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
 
-    # Codec mp4v
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    video_name = os.path.splitext(os.path.basename(VIDEO_PATH))[0]
+    OUTPUT_PATH = os.path.join(OUTPUT_DIR, f"{video_name}_{timestamp}_tracked.mp4")
+    
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(OUTPUT_PATH, fourcc, fps, (width, height))
 
-    # 5. HELPER: COLOR GENERATOR
-    id_colors = {}
-    def get_color(track_id):
-        if track_id not in id_colors:
-            np.random.seed(int(track_id))
-            id_colors[track_id] = tuple(np.random.randint(0, 255, 3).tolist())
-        return id_colors[track_id]
+    # --- 4. CẤU HÌNH PHÂN LOẠI ĐỘI BÓNG (TEAM CLASSIFIER) ---
+    classifier = TeamClassifier()
+    frames_for_calibration = 30  # 30 frame đầu để học màu áo
+    calibration_crops = []       
+    is_calibrated = False        
+    
+    # Bộ nhớ đệm (Cache) để tăng tốc độ: {track_id: team_id}
+    team_cache = {} 
 
-    # 6. MAIN LOOP
+    # Màu hiển thị: Team 0 (Xanh), Team 1 (Đỏ) - Hệ màu BGR
+    TEAM_COLORS = {0: (255, 0, 0), 1: (0, 0, 255)} 
+
+    # --- 5. VÒNG LẶP CHÍNH (MAIN LOOP) ---
     print("[INFO] Starting tracking loop...")
     frame_count = 0
 
@@ -79,61 +93,101 @@ if __name__ == "__main__":
             break
         frame_count += 1
 
-        # Detection
+        # A. DETECTION (YOLO)
         results = model(frame, size=IMG_SIZE)
-        detections = results.xyxy[0].cpu().numpy() # Chuyển về CPU để xử lý logic
+        detections = results.xyxy[0].cpu().numpy()
 
-        player_dets = []
-        ball_dets = []
+        player_dets = [] 
 
-        # Format của deep_sort_realtime: [[left, top, w, h], confidence, detection_class]
         for x1, y1, x2, y2, conf, cls in detections:
-            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            w, h = x2 - x1, y2 - y1
-            cls = int(cls)
-
-            if cls == 0:  # Player (Giả định class 0 là player)
+            # Giả định class 0 là Player
+            if int(cls) == 0: 
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                w, h = x2 - x1, y2 - y1
                 player_dets.append(([x1, y1, w, h], conf, 'player'))
-            else:         # Ball (Giả định các class khác là bóng)
-                ball_dets.append((x1, y1, x2, y2, conf))
 
-        # --- TRACKING LOGIC (SỬA LỖI THỤT DÒNG TẠI ĐÂY) ---
-        # Tracks phải được cập nhật 1 lần mỗi frame, KHÔNG phải trong vòng lặp detections
+        # B. TRACKING (DeepSort)
         tracks = tracker.update_tracks(player_dets, frame=frame)
-        # --------------------------------------------------
 
-        # Draw Tracks (Players)
+        # C. LOGIC PHÂN LOẠI ĐỘI BÓNG
+        
+        # Giai đoạn 1: Thu thập dữ liệu (Calibration)
+        if not is_calibrated and frame_count <= frames_for_calibration:
+            for track in tracks:
+                if not track.is_confirmed(): continue
+                ltrb = track.to_ltrb()
+                x1, y1, x2, y2 = int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3])
+                
+                # Check biên an toàn để không crash
+                x1, y1 = max(0, x1), max(0, y1)
+                x2, y2 = min(width, x2), min(height, y2)
+                
+                player_crop = frame[y1:y2, x1:x2]
+                if player_crop.size > 0:
+                    calibration_crops.append(player_crop)
+
+            cv2.putText(frame, f"Dang hoc mau ao... {frame_count}/{frames_for_calibration}", 
+                        (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+        # Giai đoạn 2: Training K-Means (Chạy 1 lần duy nhất)
+        elif not is_calibrated and frame_count > frames_for_calibration:
+            print(f"[INFO] Đã thu thập {len(calibration_crops)} mẫu áo. Bắt đầu phân loại...")
+            if len(calibration_crops) > 0:
+                classifier.fit_teams(calibration_crops)
+                is_calibrated = True
+            else:
+                print("[WARN] Không đủ dữ liệu để học màu áo!")
+
+        # Giai đoạn 3: Vẽ và Dự đoán (Prediction)
         for track in tracks:
             if not track.is_confirmed():
                 continue
 
             track_id = track.track_id
-            ltrb = track.to_ltrb() # left, top, right, bottom
+            ltrb = track.to_ltrb()
+            x1, y1, x2, y2 = int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3])
             
+            # Màu mặc định (Xám) khi chưa biết đội
+            color = (128, 128, 128) 
+            team_text = ""
+
+            if is_calibrated:
+                # --- TỐI ƯU TỐC ĐỘ (SPEED OPTIMIZATION) ---
+                # Nếu ID này đã biết đội rồi -> Lấy luôn từ Cache
+                if track_id in team_cache:
+                    team_id = team_cache[track_id]
+                else:
+                    # Nếu chưa biết -> Mới phải tính toán (chậm)
+                    bx1, by1 = max(0, x1), max(0, y1)
+                    bx2, by2 = min(width, x2), min(height, y2)
+                    
+                    # Gọi hàm phân loại
+                    team_id = classifier.predict(frame, [bx1, by1, bx2, by2])
+                    
+                    # Lưu ngay vào Cache
+                    team_cache[track_id] = team_id
+                # ------------------------------------------
+
+                color = TEAM_COLORS.get(team_id, (255, 255, 255))
+                team_text = f"Doi {team_id+1}" # Đội 1 hoặc Đội 2
+
             # Vẽ Box
-            l, t, r, b = int(ltrb[0]), int(ltrb[1]), int(ltrb[2]), int(ltrb[3])
-            color = get_color(int(track_id))
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             
-            cv2.rectangle(frame, (l, t), (r, b), color, 2)
-            
-            # Vẽ ID Background cho dễ nhìn
-            label = f"ID: {track_id}"
-            (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-            cv2.rectangle(frame, (l, t - 20), (l + w_text, t), color, -1)
-            cv2.putText(frame, label, (l, t - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            # Vẽ Nhãn (Label)
+            label = f"ID:{track_id} {team_text}"
+            (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            cv2.rectangle(frame, (x1, y1 - 20), (x1 + w_text, y1), color, -1)
+            cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-        # Draw Detections (Ball - No Tracking)
-        for x1, y1, x2, y2, conf in ball_dets:
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 255), 2) # Màu vàng cho bóng
-            cv2.putText(frame, f"Ball {conf:.2f}", (x1, y1 - 5), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-
-        # Status update
+        # In thông báo tiến độ mỗi 20 frames
         if frame_count % 20 == 0:
-            print(f"[Run] Processing frame {frame_count}...")
+            print(f"[Processing] Frame {frame_count} - Calibrated: {is_calibrated}")
 
         out.write(frame)
 
+    # --- 6. KẾT THÚC ---
     cap.release()
     out.release()
-    print(f"[DONE] Video saved to: {OUTPUT_PATH}")
+    cv2.destroyAllWindows()
+    print(f"\n[XONG] Video đã được lưu tại: {OUTPUT_PATH}")
