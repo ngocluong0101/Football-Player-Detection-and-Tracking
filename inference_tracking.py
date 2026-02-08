@@ -190,4 +190,4 @@ if __name__ == "__main__":
     cap.release()
     out.release()
     cv2.destroyAllWindows()
-    print(f"\n[XONG] Video đã được lưu tại: {OUTPUT_PATH}")
+    print(f"\n[DONE] Video saved to: {OUTPUT_PATH}")
