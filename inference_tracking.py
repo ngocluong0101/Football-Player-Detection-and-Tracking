@@ -10,7 +10,7 @@ from deep_sort_realtime.deepsort_tracker import DeepSort
 try:
     from team_classifier import TeamClassifier
 except ImportError:
-    print("[ERROR] Không tìm thấy file 'team_classifier.py'. Hãy tạo file này trước!")
+    print("[ERROR] Không tìm thấy file 'team_classifier.py'")
     exit()
 
 if __name__ == "__main__":
